@@ -58,7 +58,50 @@ impl StateMachine for Atm {
     type Transition = Action;
 
     fn next_state(starting_state: &Self::State, t: &Self::Transition) -> Self::State {
-        todo!("Exercise 4")
+        let mut new_state = starting_state.clone();
+        match t {
+            Action::SwipeCard(pin_hash) => {
+                new_state.expected_pin_hash = Auth::Authenticating(*pin_hash);
+                new_state.keystroke_register.clear();
+            },
+            Action::PressKey(key) => match &new_state.expected_pin_hash {
+                Auth::Waiting => {},
+
+                Auth::Authenticating(expected_hash) => {
+                    new_state.keystroke_register.push(key.clone());
+                    if let Key::Enter = key {
+                        let entered_pin: Vec<_> = new_state.keystroke_register.iter().cloned().filter(|k| *k != Key::Enter).collect();
+                        let entered_pin_hash = crate::hash(&entered_pin);
+                        if &entered_pin_hash == expected_hash {
+                            new_state.expected_pin_hash = Auth::Authenticated;
+                        } else {
+                            new_state.expected_pin_hash = Auth::Waiting;
+                        }
+                        new_state.keystroke_register.clear();
+                    }
+                },
+                Auth::Authenticated => {
+                    new_state.keystroke_register.push(key.clone());
+                    if let Key::Enter = key {
+                        let amount_str: String = new_state.keystroke_register.iter().cloned().filter(|k| *k != Key::Enter).map(|k| match k {
+                            Key::One => '1',
+                            Key::Two => '2',
+                            Key::Three => '3',
+                            Key::Four => '4',
+                            _ => '0',
+                        }).collect();
+                        if let Ok(amount) = amount_str.parse::<u64>() {
+                            if amount <= new_state.cash_inside {
+                                new_state.cash_inside -= amount;
+                            }
+                        }
+                        new_state.expected_pin_hash = Auth::Waiting;
+                        new_state.keystroke_register.clear();
+                    }
+                },
+            },
+        }
+        new_state
     }
 }
 
